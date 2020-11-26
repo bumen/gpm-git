@@ -16,6 +16,8 @@
    
    6. source gvp out
    
+ * 将gvp sh放到git/usr/bin目录下
+   
  * 使用了gpm-git，就不需要在使用gpm了
    
    

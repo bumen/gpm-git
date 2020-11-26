@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+set -eu
+
+## Functions/
+usage() {
+cat << EOF
+SYNOPSIS
+
+    gpm-git provides Git-based cloning of Go packages into a
+    GVP/GPM-managed system.
+
+    This is useful when the Git repositories you use are not retrievable
+    via "go get". (e.g. when they are behind authenticated git servers.)
+
+    Use a "Godeps-Git" file to track these internal dependencies.
+    The format of this file is identical to a Godeps file.
+
+USAGE
+      $ gpm git             # Same as 'install'.
+      $ gpm git version     # Outputs version information
+      $ gpm git help        # Prints this message
+
+FILE FORMAT
+
+    Godeps-Git files have three possible fields per line. The first two
+    are required. They are:
+
+    - The Git URL to the repository (e.g. git@bitbucket:/foo/bar)
+    - The Go package name (e.g. bitbucket.org/foo/bar)
+    - A git reference (e.g. a commit SHA, tag, or branch)
+
+EOF
+}
+
+VERSION="v1.0.1"
+
+# 用于检查路径
+case "`uname`" in
+    CYGWIN*|MINGW*) cygwin=true ;;
+    *) cygwin=false ;;
+esac
+
+# Iterates over Godep file dependencies and sets
+# the specified version on each of them.
+set_dependencies() {
+  local deps=$(sed 's/#.*//;/^\s*$/d' < $1) || echo ""
+
+    # 因为在gvp中设置了GOPATH为windows路径，但linux下${GOPATH%%:*}这个截取路径不确定，所以需要转成linux路径来截取
+    if $cygwin
+    then
+        LX_GOPATH=`cygpath -up "$GOPATH"`
+    fi
+
+  while read source package version; do
+    (
+
+      # 对于gitbub包，package 命名不启作用。于文档描述不一致
+      if echo "$source" | grep "github.com" >/dev/null; then
+        local repo=$(echo "$source" | sed -n 's|.*github\.com.\(.*\)\.git|\1|p')
+        local install_path="${LX_GOPATH%%:*}/src/github.com/${repo}"
+      else
+        local install_path="${LX_GOPATH%%:*}/src/${package%%/...}"
+      fi
+
+      [[ -e "$install_path/.git/index.lock" ||
+         -e "$install_path/.hg/store/lock"  ||
+         -e "$install_path/.bzr/checkout/lock" ]] && wait
+
+      if [[ -e "$install_path" ]]; then
+        echo ">> Git Fetch "$package""
+        cd "$install_path"
+        git fetch --all
+        # git pull --ff-only origin
+        cd -
+      else
+        echo ">> Cloning package "$source" into "$package""
+        mkdir -p "$install_path"
+        git clone "$source" "$install_path"
+      fi
+
+      # Figure out, based on ref, what type of reference this is.
+      local vtype="commit"
+      git show-ref -q "origin/$version" && vtype="branch"
+      git show-ref -q "tags/$version" && vtype="tag"
+
+      echo ">> Setting $package to $vtype $version"
+      cd $install_path
+      [ -d .git ] && git checkout -q "$version"
+
+      # Handle case where branch changed. We need to get to the tip
+      # of that branch.
+      [ $vtype == "branch" ] && git merge --ff-only origin $version
+
+    ) &
+  done < <(echo "$deps")
+  wait
+  echo ">> All Done"
+}
+## /Functions
+
+## Command Line Parsing
+case "${1:-"install"}" in
+  "version")
+    echo ">> gpm-git $VERSION"
+    ;;
+  "install")
+    deps_file="${2:-"Godeps-Git"}"
+    [[ -f "$deps_file" ]] || (echo ">> $deps_file file does not exist." && exit 1)
+    (which go > /dev/null) ||
+      ( echo ">> Go is currently not installed or in your PATH" && exit 1)
+    set_dependencies $deps_file
+    ;;
+  "help")
+    usage
+    ;;
+  *)
+    usage && exit 1
+    ;;
+esac

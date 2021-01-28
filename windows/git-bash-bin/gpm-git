@@ -52,11 +52,13 @@ set_dependencies() {
         LX_GOPATH=`cygpath -up "$GOPATH"`
     fi
 
-  while read source package version; do
+  while read source package version usePackage; do
     (
 
       # 对于gitbub包，package 命名不启作用。于文档描述不一致
-      if echo "$source" | grep "github.com" >/dev/null; then
+      if [ "${usePackage}" == true ]; then
+        local install_path="${LX_GOPATH%%:*}/src/${package%%/...}"
+      elif echo "$source" | grep "github.com" >/dev/null; then
         local repo=$(echo "$source" | sed -n 's|.*github\.com.\(.*\)\.git|\1|p')
         local install_path="${LX_GOPATH%%:*}/src/github.com/${repo}"
       else

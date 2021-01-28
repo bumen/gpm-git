@@ -1,0 +1,5 @@
+
+
+git@github.com:StackExchange/wmi.git wmi 1.1.0
+
+git@github.com:golang/sys.git golang.org/x/sys release-branch.go.1.15 true
